@@ -34,8 +34,8 @@ class BertFeatureExtractor(object):
         :param master: Only used if `use_tpu` is True. Address of the master.
         :param num_tpu_cores: Only used if `use_tpu` is True. Total number of TPU cores to use.
         :param use_one_hot_embeddings: If True, tf.one_hot will be used for embedding lookups, otherwise
-                                       tf.nn.embedding_lookup will be used. On TPUs, this should be True.
-    "since it is much faster.
+                                       tf.nn.embedding_lookup will be used. On TPUs, this should be True,
+                                       since it is much faster.
         """
         tf.logging.set_verbosity(log_verbosity)
 
