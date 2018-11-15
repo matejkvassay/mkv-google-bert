@@ -10,7 +10,7 @@ import json
 from mkv.google_bert.model.bert_config import BertConfig
 from mkv.google_bert.tokenization import FullTokenizer
 from mkv.google_bert.feature_extraction.functions.features import convert_examples_to_features
-from mkv.google_bert.feature_extraction.functions.io import read_examples
+from mkv.google_bert.feature_extraction.functions.io import convert_to_input_examples
 from mkv.google_bert.feature_extraction.functions.builders import input_fn_builder
 from mkv.google_bert.feature_extraction.functions.builders import model_fn_builder
 
@@ -66,8 +66,14 @@ class BertFeatureExtractor(object):
             config=run_config,
             predict_batch_size=batch_size)
 
-    def extract_features(self, input_file, output_file):
-        examples = read_examples(input_file)
+    def extract_features(self, examples, tuples=False):
+        """
+        Tokenizes and extracts token features.
+        :param examples: Iterable of either str single sentences or tuples of two sentences.
+        :param tuples: True if items of input iterable are tuples of 2 sentences, False if only 1.
+        :return:
+        """
+        examples = convert_to_input_examples(examples, tuples)
         features = convert_examples_to_features(
             examples=examples, seq_length=self.max_seq_length, tokenizer=self.tokenizer)
 
@@ -81,26 +87,25 @@ class BertFeatureExtractor(object):
         input_fn = input_fn_builder(
             features=features, seq_length=self.max_seq_length)
 
-        with codecs.getwriter("utf-8")(tf.gfile.Open(output_file, "w")) as writer:
-            for result in self.estimator.predict(input_fn, yield_single_examples=True):
-                unique_id = int(result["unique_id"])
-                feature = unique_id_to_feature[unique_id]
-                output_json = collections.OrderedDict()
-                output_json["linex_index"] = unique_id
-                all_features = []
-                for (i, token) in enumerate(feature.tokens):
-                    all_layers = []
-                    for (j, layer_index) in enumerate(self.layer_indexes):
-                        layer_output = result["layer_output_%d" % j]
-                        layers = collections.OrderedDict()
-                        layers["index"] = layer_index
-                        layers["values"] = [
-                            round(float(x), 6) for x in layer_output[i:(i + 1)].flat
-                        ]
-                        all_layers.append(layers)
-                    features = collections.OrderedDict()
-                    features["token"] = token
-                    features["layers"] = all_layers
-                    all_features.append(features)
-                output_json["features"] = all_features
-                writer.write(json.dumps(output_json) + "\n")
+        for result in self.estimator.predict(input_fn, yield_single_examples=True):
+            unique_id = int(result["unique_id"])
+            feature = unique_id_to_feature[unique_id]
+            output_json = collections.OrderedDict()
+            output_json["linex_index"] = unique_id
+            all_features = []
+            for (i, token) in enumerate(feature.tokens):
+                all_layers = []
+                for (j, layer_index) in enumerate(self.layer_indexes):
+                    layer_output = result["layer_output_%d" % j]
+                    layers = collections.OrderedDict()
+                    layers["index"] = layer_index
+                    layers["values"] = [
+                        round(float(x), 6) for x in layer_output[i:(i + 1)].flat
+                    ]
+                    all_layers.append(layers)
+                features = collections.OrderedDict()
+                features["token"] = token
+                features["layers"] = all_layers
+                all_features.append(features)
+            output_json["features"] = all_features
+            yield output_json

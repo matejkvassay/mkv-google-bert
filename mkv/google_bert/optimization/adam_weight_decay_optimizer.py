@@ -21,6 +21,7 @@ from __future__ import print_function
 import re
 import tensorflow as tf
 
+
 class AdamWeightDecayOptimizer(tf.train.Optimizer):
     """A basic Adam optimizer that includes "correct" L2 weight decay."""
 

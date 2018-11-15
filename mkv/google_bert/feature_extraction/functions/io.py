@@ -15,25 +15,18 @@ class InputExample(object):
         self.text_b = text_b
 
 
-def read_examples(input_file):
-    """Read a list of `InputExample`s from an input file."""
-    examples = []
+def convert_to_input_examples(data_iterable, tuples=False):
+    """
+    :param data_iterable: Iterable of data samples or tuples of samples.
+    :param tuples: True if items of input iterable are tuples of 2 sentences, False if only 1.
+    :return:
+    """
     unique_id = 0
-    with tf.gfile.GFile(input_file, "r") as reader:
-        while True:
-            line = convert_to_unicode(reader.readline())
-            if not line:
-                break
-            line = line.strip()
-            text_a = None
-            text_b = None
-            m = re.match(r"^(.*) \|\|\| (.*)$", line)
-            if m is None:
-                text_a = line
-            else:
-                text_a = m.group(1)
-                text_b = m.group(2)
-            examples.append(
-                InputExample(unique_id=unique_id, text_a=text_a, text_b=text_b))
+    if tuples:
+        for item in data_iterable:
+            yield InputExample(unique_id=unique_id, text_a=item[0], text_b=item[1])
             unique_id += 1
-    return examples
+    else:
+        for item in data_iterable:
+            yield InputExample(unique_id=unique_id, text_a=item)
+            unique_id += 1
