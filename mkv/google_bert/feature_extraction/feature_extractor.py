@@ -67,14 +67,24 @@ class BertFeatureExtractor(object):
             config=run_config,
             predict_batch_size=batch_size)
 
-    def extract_features(self, examples, tuples=False, exclude_tags=False):
+    def extract_features(self, examples, tuples=False, include_class=False, include_original=False):
         """
         Tokenizes and extracts token features.
         :param examples: Iterable of either str single sentences or tuples of two sentences.
         :param tuples: True if items of input iterable are tuples of 2 sentences, False if only 1.
-        :return: Yields dictionary {'tokens':[], 'vectors':[]} where vector list contains arrays of shape (vec_dim,)
-                 if features from only 1 layer are extracted or shape (nlayers, vec_dim) if multiple layers were
-                 set in constructor.
+        :param include_class: Vector of class will be also added to result.
+        :return: A.)
+                 In case of single sentences: Yields dictionary {'tokens':[], 'vectors':[]},
+                 where vector list contains arrays of shape (vec_dim,) if features from only 1 layer are extracted
+                 or shape (nlayers, vec_dim) if multiple layers were set in constructor. 'original' is optional,
+                 if 'include_original' is set to True it will include original
+                 example.
+                 B.)
+                 In case of sentence pairs when 'tuples' is set to True it yields:
+                 {'tokens_A':[], 'tokens_B':[], 'vectors_A':[], 'vectors_B':[]}
+                 C.)
+                 In case 'include_class' is True, the yielded dictionary will also contain 'cls' key with vector
+                 of class.
         """
         examples = convert_to_input_examples(examples, tuples=tuples)
         features = convert_examples_to_features(
@@ -89,15 +99,39 @@ class BertFeatureExtractor(object):
             unique_id = int(result["unique_id"])
             feature = unique_id_to_feature[unique_id]
             tokens = []
+            tokens2 = []
+            was_separator = False
             vectors = []
+            vectors2 = []
+            cls_vec = None
             for (i, token) in enumerate(feature.tokens):
-                if not exclude_tags or not (token.startswith('[') and token.endswith(']')):
-                    vec = np.array([[round(float(x), 6) for x in result["layer_output_%d" % j][i:(i + 1)].flat] for
-                                    (j, layer_index) in enumerate(self.layer_indexes)])
-                    if len(self.layer_indexes) > 1:
-                        vectors.append(vec)
+                if tuples and token == '[SEP]':
+                    was_separator = True
+                if token == '[SEP]':
+                    if tuples:
+                        was_separator = True
+                    continue
+                vec = np.array([[round(float(x), 6) for x in result["layer_output_%d" % j][i:(i + 1)].flat] for
+                                (j, layer_index) in enumerate(self.layer_indexes)])
+                if not len(self.layer_indexes) > 1:
+                    vec = vec[0]
+                if token == '[CLS]':
+                    cls_vec = vec
+                else:
+                    if was_separator:
+                        tokens2.append(token)
+                        vectors2.append(vec)
                     else:
-                        vectors.append(vec[0])
-                    tokens.append(token)
-            assert len(tokens) == len(vectors)
-            yield {'tokens': tokens, 'vectors': vectors}
+                        tokens.append(token)
+                        vectors.append(vec)
+            if tuples:
+                if include_class:
+                    yield {'cls': cls_vec, 'tokens_A': tokens, 'tokens_B': tokens2, 'vectors_A': vectors,
+                           'vectors_B': vectors2}
+                else:
+                    yield {'tokens_A': tokens, 'tokens_B': tokens2, 'vectors_A': vectors, 'vectors_B': vectors2}
+            else:
+                if include_class:
+                    yield {'cls': cls_vec, 'tokens': tokens, 'vectors': vectors}
+                else:
+                    yield {'tokens': tokens, 'vectors': vectors}
