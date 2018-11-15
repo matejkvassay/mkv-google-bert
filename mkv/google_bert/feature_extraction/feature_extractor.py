@@ -67,7 +67,7 @@ class BertFeatureExtractor(object):
             config=run_config,
             predict_batch_size=batch_size)
 
-    def extract_features(self, examples, tuples=False, include_class=False, include_original=False):
+    def extract_features(self, examples, tuples=False, include_class=False):
         """
         Tokenizes and extracts token features.
         :param examples: Iterable of either str single sentences or tuples of two sentences.
