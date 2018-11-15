@@ -28,5 +28,5 @@ def convert_to_input_examples(data_iterable, tuples=False):
             unique_id += 1
     else:
         for item in data_iterable:
-            yield InputExample(unique_id=unique_id, text_a=item)
+            yield InputExample(unique_id=unique_id, text_a=item, text_b=None)
             unique_id += 1

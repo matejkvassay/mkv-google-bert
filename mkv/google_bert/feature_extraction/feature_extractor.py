@@ -6,6 +6,7 @@ import tensorflow as tf
 import collections
 import codecs
 import json
+import numpy as np
 
 from mkv.google_bert.model.bert_config import BertConfig
 from mkv.google_bert.tokenization import FullTokenizer
@@ -17,14 +18,14 @@ from mkv.google_bert.feature_extraction.functions.builders import model_fn_build
 
 class BertFeatureExtractor(object):
     def __init__(self, bert_config_file, init_checkpoint, vocab_file, layers="-1,-2,-3,-4",
-                 max_seq_length=128, do_lower_case=True, batch_size=32, use_tpu=False, master=False,
+                 max_seq_length=128, do_lower_case=True, batch_size=32, use_tpu=False, master=None,
                  num_tpu_cores=8, use_one_hot_embeddings=False, log_verbosity=tf.logging.INFO):
         """
         :param bert_config_file: The config json file corresponding to the pre-trained BERT model.
                                  This specifies the model architecture.
         :param init_checkpoint: Initial checkpoint (usually from a pre-trained BERT model).
         :param vocab_file: The vocabulary file that the BERT model was trained on.
-        :param layers:
+        :param layers: Comma separated indices of layers to extract fature vectors from (for top 3 layers "-1, -2, -3")
         :param max_seq_length: The maximum total input sequence length after WordPiece tokenization. Sequences longer
                                than this will be truncated, and sequences shorter than this will be padded.
         :param do_lower_case: Whether to lower case the input text. Should be True for uncased models and False
@@ -66,46 +67,37 @@ class BertFeatureExtractor(object):
             config=run_config,
             predict_batch_size=batch_size)
 
-    def extract_features(self, examples, tuples=False):
+    def extract_features(self, examples, tuples=False, exclude_tags=False):
         """
         Tokenizes and extracts token features.
         :param examples: Iterable of either str single sentences or tuples of two sentences.
         :param tuples: True if items of input iterable are tuples of 2 sentences, False if only 1.
-        :return:
+        :return: Yields dictionary {'tokens':[], 'vectors':[]} where vector list contains arrays of shape (vec_dim,)
+                 if features from only 1 layer are extracted or shape (nlayers, vec_dim) if multiple layers were
+                 set in constructor.
         """
-        examples = convert_to_input_examples(examples, tuples)
+        examples = convert_to_input_examples(examples, tuples=tuples)
         features = convert_examples_to_features(
             examples=examples, seq_length=self.max_seq_length, tokenizer=self.tokenizer)
-
         unique_id_to_feature = {}
         for feature in features:
             unique_id_to_feature[feature.unique_id] = feature
-
-        for feature in features:
-            unique_id_to_feature[feature.unique_id] = feature
-
         input_fn = input_fn_builder(
             features=features, seq_length=self.max_seq_length)
 
         for result in self.estimator.predict(input_fn, yield_single_examples=True):
             unique_id = int(result["unique_id"])
             feature = unique_id_to_feature[unique_id]
-            output_json = collections.OrderedDict()
-            output_json["linex_index"] = unique_id
-            all_features = []
+            tokens = []
+            vectors = []
             for (i, token) in enumerate(feature.tokens):
-                all_layers = []
-                for (j, layer_index) in enumerate(self.layer_indexes):
-                    layer_output = result["layer_output_%d" % j]
-                    layers = collections.OrderedDict()
-                    layers["index"] = layer_index
-                    layers["values"] = [
-                        round(float(x), 6) for x in layer_output[i:(i + 1)].flat
-                    ]
-                    all_layers.append(layers)
-                features = collections.OrderedDict()
-                features["token"] = token
-                features["layers"] = all_layers
-                all_features.append(features)
-            output_json["features"] = all_features
-            yield output_json
+                if not exclude_tags or not (token.startswith('[') and token.endswith(']')):
+                    vec = np.array([[round(float(x), 6) for x in result["layer_output_%d" % j][i:(i + 1)].flat] for
+                                    (j, layer_index) in enumerate(self.layer_indexes)])
+                    if len(self.layer_indexes) > 1:
+                        vectors.append(vec)
+                    else:
+                        vectors.append(vec[0])
+                    tokens.append(token)
+            assert len(tokens) == len(vectors)
+            yield {'tokens': tokens, 'vectors': vectors}
